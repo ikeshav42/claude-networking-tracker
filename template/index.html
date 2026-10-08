@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Networking Tracker</title>
+<style>
+  :root {
+    --bg: #ffffff; --text: #1a1a1a; --muted: #6b7280; --border: #e5e7eb; --row-alt: #f9fafb;
+    --pending: #b45309; --pending-bg: #fffbeb;
+    --accepted: #15803d; --accepted-bg: #f0fdf4;
+    --followed: #2563eb; --followed-bg: #eff6ff;
+    --noresp: #b91c1c; --noresp-bg: #fef2f2;
+    --due: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181d; --text: #e8e9eb; --muted: #9aa0a8; --border: #2a2d33; --row-alt: #1c1f25;
+      --pending: #fbbf24; --pending-bg: #2a2410;
+      --accepted: #4ade80; --accepted-bg: #10251a;
+      --followed: #60a5fa; --followed-bg: #1e293b;
+      --noresp: #f87171; --noresp-bg: #2a1616;
+      --due: #f87171;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16181d; --text: #e8e9eb; --muted: #9aa0a8; --border: #2a2d33; --row-alt: #1c1f25;
+    --pending: #fbbf24; --pending-bg: #2a2410;
+    --accepted: #4ade80; --accepted-bg: #10251a;
+    --followed: #60a5fa; --followed-bg: #1e293b;
+    --noresp: #f87171; --noresp-bg: #2a1616;
+    --due: #f87171;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding-inline: 16px; padding-block: 24px 60px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 16px; }
+  .summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip {
+    font: inherit; font-size: 0.82rem; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer;
+  }
+  .chip.active { color: var(--text); border-color: var(--text); font-weight: 600; }
+  .chip:focus-visible, select:focus-visible { outline: 2px solid var(--followed); outline-offset: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  thead th {
+    text-align: left; padding: 10px; border-bottom: 2px solid var(--border);
+    color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  tbody td { padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: top; min-width: 0; }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  .person { font-weight: 600; }
+  .role { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+  .notes { color: var(--muted); font-size: 0.82rem; }
+  .due { color: var(--due); font-weight: 600; font-size: 0.78rem; margin-top: 4px; }
+  .when { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+  select.status-select {
+    font-size: 0.8rem; font-weight: 600; padding: 4px 8px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
+  }
+  select.pending { color: var(--pending); background: var(--pending-bg); }
+  select.accepted { color: var(--accepted); background: var(--accepted-bg); }
+  select.followed { color: var(--followed); background: var(--followed-bg); }
+  select.noresp { color: var(--noresp); background: var(--noresp-bg); }
+  .empty {
+    border: 1px dashed var(--border); border-radius: 10px; padding: 20px; margin-top: 8px;
+    color: var(--muted); font-size: 0.9rem;
+  }
+  .empty b { color: var(--text); }
+  .hint { color: var(--muted); font-size: 0.8rem; margin-top: 24px; }
+  @media (max-width: 640px) {
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tbody tr { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; padding: 10px; background: var(--row-alt); }
+    tbody td { border: none; padding: 4px 0; }
+    tbody td::before {
+      content: attr(data-label); display: block; font-size: 0.7rem; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 2px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Networking Tracker</h1>
+  <div class="sub">LinkedIn connection requests and where each one stands. Pending requests flag as due after the follow-up window.</div>
+
+  <div class="summary" id="summary"></div>
+
+  <div id="empty" class="empty" hidden>
+    <b>No connections yet.</b> Tell Claude who you sent a request to (name, role, company, date) and it will add a row.
+    Statuses: Pending, Accepted, Followed up, No response.
+  </div>
+
+  <table id="table">
+    <thead>
+      <tr>
+        <th>Person / Role</th>
+        <th>Status</th>
+        <th>Sent</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="hint">Status changes made with the dropdown are saved in this browser only. Ask Claude to update the page for changes that should persist everywhere.</div>
+</div>
+
+<script>
+// Follow up this many days after sending a request that is still pending.
+const FOLLOW_UP_DAYS = 4;
+
+// One object per person. sent is YYYY-MM-DD. status is one of: pending, accepted, followed, noresp.
+// Example row (delete the // to use as a pattern):
+// { person: "Alex Rivera", role: "Data Engineer", company: "Acme Corp", status: "pending", sent: "2026-01-15", notes: "Mutual: Sam. Used the 300-char note. Follow up by Jan 19." },
+const conns = [
+];
+
+const statusMeta = {
+  pending:  { label: "Pending" },
+  accepted: { label: "Accepted" },
+  followed: { label: "Followed up" },
+  noresp:   { label: "No response" },
+};
+
+const rowsEl = document.getElementById("rows");
+const summaryEl = document.getElementById("summary");
+const emptyEl = document.getElementById("empty");
+const tableEl = document.getElementById("table");
+let filter = "all";
+
+function loadOverrides() {
+  try {
+    const o = JSON.parse(localStorage.getItem("netStatusOverrides") || "{}");
+    Object.keys(o).forEach(k => { if (!statusMeta[o[k]]) delete o[k]; });
+    return o;
+  } catch (e) { return {}; }
+}
+function saveOverride(key, status) {
+  try {
+    const o = loadOverrides();
+    o[key] = status;
+    localStorage.setItem("netStatusOverrides", JSON.stringify(o));
+  } catch (e) {}
+}
+
+function keyOf(c) { return c.person + "|" + (c.company || ""); }
+function statusOf(c, o) { return o[keyOf(c)] || c.status; }
+function parseDate(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+}
+function fmt(d) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+function daysSince(d) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((t - d) / 86400000);
+}
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function renderSummary(o) {
+  const counts = { all: conns.length, pending: 0, accepted: 0, followed: 0, noresp: 0 };
+  let due = 0;
+  conns.forEach(c => {
+    const s = statusOf(c, o);
+    counts[s]++;
+    const d = parseDate(c.sent);
+    if (s === "pending" && d && daysSince(d) >= FOLLOW_UP_DAYS) due++;
+  });
+  summaryEl.innerHTML = "";
+  const defs = [["all", "All"], ["pending", "Pending"], ["accepted", "Accepted"], ["followed", "Followed up"], ["noresp", "No response"]];
+  defs.forEach(([k, label]) => {
+    const b = el("button", "chip" + (filter === k ? " active" : ""), label + " " + counts[k]);
+    b.type = "button";
+    b.onclick = () => { filter = k; render(); };
+    summaryEl.appendChild(b);
+  });
+  if (due) summaryEl.appendChild(el("span", "due", due + " due for follow-up"));
+}
+
+function render() {
+  const o = loadOverrides();
+  renderSummary(o);
+  rowsEl.innerHTML = "";
+  emptyEl.hidden = conns.length > 0;
+  tableEl.hidden = conns.length === 0;
+
+  const list = conns
+    .map((c, i) => ({ c, i }))
+    .filter(x => filter === "all" || statusOf(x.c, o) === filter)
+    .sort((a, b) => {
+      const da = parseDate(a.c.sent), db = parseDate(b.c.sent);
+      return ((db ? db.getTime() : 0) - (da ? da.getTime() : 0)) || (b.i - a.i);
+    });
+
+  list.forEach(({ c }) => {
+    const current = statusOf(c, o);
+    const tr = document.createElement("tr");
+
+    const tdP = el("td"); tdP.dataset.label = "Person / Role";
+    tdP.appendChild(el("div", "person", c.person));
+    const roleText = [c.role, c.company].filter(Boolean).join(", ");
+    if (roleText) tdP.appendChild(el("div", "role", roleText));
+    tr.appendChild(tdP);
+
+    const tdS = el("td"); tdS.dataset.label = "Status";
+    const select = el("select", "status-select " + current);
+    select.setAttribute("aria-label", "Status for " + c.person);
+    Object.entries(statusMeta).forEach(([k, m]) => {
+      const opt = el("option", null, m.label);
+      opt.value = k;
+      if (k === current) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.onchange = () => { saveOverride(keyOf(c), select.value); render(); };
+    tdS.appendChild(select);
+    tr.appendChild(tdS);
+
+    const tdD = el("td"); tdD.dataset.label = "Sent";
+    const d = parseDate(c.sent);
+    if (d) {
+      tdD.appendChild(el("div", null, fmt(d)));
+      const n = daysSince(d);
+      tdD.appendChild(el("div", "when", n <= 0 ? "today" : n + (n === 1 ? " day ago" : " days ago")));
+      if (current === "pending" && n >= FOLLOW_UP_DAYS) tdD.appendChild(el("div", "due", "Follow up now"));
+    } else {
+      tdD.textContent = c.sent || "—";
+    }
+    tr.appendChild(tdD);
+
+    const tdN = el("td", "notes", c.notes || "—"); tdN.dataset.label = "Notes";
+    tr.appendChild(tdN);
+
+    rowsEl.appendChild(tr);
+  });
+}
+
+render();
+</script>
+</body>
+</html>
